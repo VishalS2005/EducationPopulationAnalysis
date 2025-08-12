@@ -1,0 +1,748 @@
+---
+title: "FinalProject"
+author: "Vishal Saravanan"
+date: "2025-05-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(janitor)
+library(scales)
+library(extrafont)
+library(gganimate)
+library(gifski)
+library(knitr)
+library(english)
+library(png)
+knitr::opts_chunk$set(dev = "png", dpi = 150)
+```
+
+# Education Dataset
+
+The first dataset that I will be working with includes the amount of teachers in a country. The dataset is from the World Bank and can be found at this link: <https://ourworldindata.org/global-education>. The education dataset had close to 8000 rows and includes the columns country name, country code, and then the amount of teachers (pre-primary, primary, secondary, tertiary) from the years 1970-2014. However, an issue with this dataset is the amount of null values that need to be accounted for, often in the older years and smaller countries. 
+
+## Cleaning the Education Dataset
+
+Load the data from local directory. I have only printed a random sample of 25 rows for readability.
+
+```{r load_education_data, echo = TRUE}
+education_data <- read.csv("number-of-teachers-across-education-levels.csv")
+education_data |>
+  slice_sample(n = 25) |>
+  kable(
+    caption = "Education Data (Raw)",
+    align = "c"  
+  )
+```
+
+Initially, I want to clean the column names because they are too long. I used a combination of the **clean_names()** function from the **janitor** package and **rename_with()** and **str_replace** from the **dplyr/stringr** package. I also decided to remove all of the rows that have any NA values. I used the following link to help build Regex formulas to change the column names: <https://regex101.com/>. I have also included a line of code that will help export the cleaned version of the education data. I have only printed a random sample of 25 rows for readability.
+
+```{r clean_education_data}
+clean_education <- education_data |>
+  clean_names() |>
+  rename_with(
+    ~ str_replace(
+      .x,
+      pattern = "^teachers_in_(.*?)_education.*$",  #starts with teachers_in and ends with education...
+      replacement = "\\1" 
+    )
+  ) |>
+  drop_na() 
+
+clean_education |>
+  slice_sample(n = 25) |>
+  kable(
+    caption = "Education Data (Cleaned)",
+    align = "c"  
+  )
+#write_csv(clean_education, "clean_education.csv")
+```
+
+## Education in the United States
+
+I want to rename **entity** to be called **country** instead. I do not need the **code** column either. First, we will focus on values from the United States from 2000 to 2014. I will also create a new column to hold the total number of teachers across all four categories. I also will combine both lower and upper secondary education to a single column called **secondary**. 
+
+```{r filter_education_data_US, echo = FALSE}
+educationUS <- clean_education |>
+  rename(country = entity) |>
+  filter(country == "United States" & year >= 2000) |>
+  mutate(secondary = lower_secondary + upper_secondary, total_teachers = pre_primary + primary + secondary + tertiary) |>
+  select(country, year, pre_primary, primary, secondary, tertiary, total_teachers) 
+
+educationUS |>
+  kable(
+    caption = "Education Data in the US (2000-2014)",
+    align = "c"  
+  )
+```
+
+Now that we have cleaned the data, we can create an animated plot using the **ggplot2** and **gganimate** packages to show the total teachers from 2000-2014 in the United States.
+
+```{r plot_education_data, echo = FALSE, message = FALSE, warning = FALSE}
+animated_plot_edu <- educationUS |>
+  ggplot(aes(x = year, y = total_teachers, group = 1)) +
+  geom_line(color = "blue") +
+  geom_point(size = 2, color = "red") +
+  labs(
+    title = "Total Teachers in the United States (2000-2014)",
+    subtitle = "Year: {closest_state}",
+    x = "Year",
+    y = "Total Teachers"
+  ) +
+  scale_y_continuous(labels = comma) +   
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    plot.subtitle = element_text(
+      size = 16,
+      family = "Times New Roman",
+      face = "italic",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.x = element_text(
+      size = 14,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.y = element_text(
+      size = 14,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12)
+  ) +
+  transition_states(year, transition_length = 1, state_length = 2) +
+  ease_aes('cubic-in-out') +
+  enter_fade() +
+  exit_shrink()
+
+animate(
+  animated_plot_edu,
+  renderer = gifski_renderer("education_animation.gif"),
+  device = "png",  
+  nframes = 100,
+  fps = 15, 
+  width = 6,  
+  height = 4.5,
+  units = "in",
+  res = 150
+)
+```
+
+## Education in the Countries with High GDP
+
+Next, we will clean and filter the data for multiple countries for primary education. These countries were selected based on their high GDP values. I will be using the same cleaning process as before, but I will also filter the data to only include the years 2006-2014. An issue I came across were some NA values in the China data before the year 2006 which is why I removed those rows altogether. 
+
+```{r high_GDP_multiple_countries, echo = TRUE}
+educationGDP <- 
+  education_data |>
+  clean_names() |>
+  rename_with(
+    ~ str_replace(
+      .x,
+      pattern = "^teachers_in_(.*?)_education.*$",  #starts with teachers_in and ends with education...
+      replacement = "\\1" 
+    )
+  ) |>
+  rename(country = entity) |>
+  filter(country %in% c("United States", "China", "Japan", "Germany")
+                        & year >= 2006 & year <= 2014) |>
+  select(country, year, primary) |>
+  arrange(country, year)
+
+educationGDP |>
+  kable(
+    caption = "Education Data in Multiple Countries (2006-2014)",
+    align = "c"  
+  )
+```
+
+In the following plot, I will be using the **facet_wrap** function to create a separate plot for each country. I will also use the **scale_y_continuous** function to format the y-axis labels with commas for better readability. The **theme_minimal** function is used to give the plot a clean and modern look.
+
+```{r plot_education_data_multiple_countries, echo = FALSE}
+educationGDP |>
+  ggplot(aes(x = year, y = primary)) +
+  geom_line() +
+  geom_point(size = 1.5, color = "darkblue") +
+  labs(
+    title = "Primary Teachers in Selected Countries (2006-2014)",
+    x = "Year",
+    y = "Number of Primary Teachers"
+  ) +
+  scale_y_continuous(labels = comma) +   
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 15,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.x = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.y = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(size = 5),
+    axis.text.y = element_text(size = 5)
+  ) +
+  facet_wrap(~ country, scales = "free_y") #the free_y option allows each country to have its own y-axis scale
+```
+
+Let's take a closer look at the percentage change across each year because each country has varying primary teacher ranges and populations. We need the base_2006 value to calculate the percentage change. 
+
+```{r percentage_change_edu, echo = FALSE}
+educationGDP_perc <- educationGDP |>
+  group_by(country) |>
+  mutate(
+    base_2006 = primary[year == 2006],
+    perc_change = (primary / base_2006 - 1) * 100
+  )
+
+educationGDP_perc |>
+  kable(
+    caption = "Education Data in Multiple Countries (2006-2014) with Percentage Change",
+    align = "c"  
+  )
+```
+
+Now we can once more use the **facet_wrap** function to create a separate plot for each country. I will also use the **scale_y_continuous** function to format the y-axis labels with commas for better readability. The **theme_minimal** function is used to give the plot a clean and modern look. We can see that China has the largest percentage increase in primary teachers from 2006 to 2014.
+
+```{r plot_education_data_percentage_change, echo = FALSE}
+educationGDP_perc |>
+  ggplot(aes(x = year, y = perc_change)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_line(color = "cornflowerblue") +
+  geom_point(size = 1.5, color = "darkblue") +
+  labs(
+    title = "Percentage Change in Primary Teachers (2006-2014)",
+    subtitle = "Relative to 2006 baseline",
+    x = "Year",
+    y = "Percentage Change (%)"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 13,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    plot.subtitle = element_text(
+      size = 12,
+      family = "Times New Roman",
+      face = "italic",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.x = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.y = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(size = 5),
+    axis.text.y = element_text(size = 5)
+  ) +
+  facet_wrap(~ country, scales = "free_y") 
+```
+
+# Population Dataset
+
+The second dataset that I will be working with includes the population of a country. The dataset is from the World Bank and can be found at this link: <https://ourworldindata.org/explorers/population-and-demography>. The population dataset has over 18000 rows and includes the columns country name, country code, and then the population from the years 1950-2021. 
+
+## Cleaning the Population Dataset
+
+Load the data from local directory. I have only printed a random sample of 25 rows for readability.
+
+```{r load_population_data, echo = TRUE}
+population_data <- read.csv("population-and-demography.csv")
+
+population_data |>
+  slice(1:25) |>
+  kable(
+    caption = "Population Data (Raw)",
+    align = "c"  
+  )
+```
+
+Initially, I want to clean the column names because they are too long. I used a combination of the **clean_names()** function from the **janitor** package and **rename_with()** and **str_replace** from the **dplyr/stringr** package. I also decided to remove all of the rows that have any NA values. I used the following link to help build Regex formulas to change the column names: <https://regex101.com/>. I converted the numbers to words for better readability. I have also included a line of code that will help with exporting the cleaned version of the population data. I have only printed a random sample of 25 rows for readability.
+
+```{r clean_population_data, echo = TRUE}
+clean_population <- population_data |>
+  clean_names() |>
+  rename_with(
+    ~ map_chr(.x, function(col) {
+      age_range <- str_extract(col, "(?<=population_aged_)\\d+_to_\\d+(?=_years)") #extract numerical part
+  
+      if (!is.na(age_range)) { #number to word conversion
+        age_range_words <- age_range |>
+          str_split("_to_") |>
+          map_chr(~ {
+            numbers <- as.integer(.x)
+            words <- english(numbers, UK = FALSE) |> 
+              tolower() |> 
+              str_replace_all(" ", "_")
+            paste(words, collapse = "_to_")
+          })
+        paste0(age_range_words, "_years")
+      } else {
+        col  
+      }
+    })
+  ) |>
+  select(1:3, 10:22) |>
+  drop_na() 
+
+clean_population |>
+  slice_sample(n = 25) |>
+  kable(
+    caption = "Population Data (Cleaned)",
+    align = "c"  
+  )
+#write_csv(clean_population, "clean_population.csv")
+```
+
+## Population in the United States
+
+I want to rename **country_name** to be called **country** instead. First, we will focus on values from the United States from 1950-2021. I have only printed from 2011-2021 for better readability.
+
+```{r filter_population_data_US, echo = FALSE}
+populationUS <- clean_population |>
+  rename(country = country_name) |>
+  filter(country == "United States") 
+
+populationUS |>
+  filter(year >= 2011) |>
+  kable(
+    caption = "Population Data of the US (1950-2021)",
+    align = "c"  
+  )
+```
+
+Now that we have cleaned the data, we can create an animated plot using the **ggplot2** and **gganimate** packages to show the population from 1950-2021 in the United States.
+
+```{r plot_population_data, echo = FALSE, message = FALSE, warning = FALSE}
+animated_plot_pop <- populationUS |>
+  ggplot(aes(x = year, y = population, group = 1)) +
+  geom_line(color = "blue") +
+  geom_point(size = 2, color = "red") +
+  labs(
+    title = "Population in United States (1950-2021)",
+    subtitle = "Year: {closest_state}",
+    x = "Year",
+    y = "Population"
+  ) +
+  scale_y_continuous(labels = comma) +   
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 20,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    plot.subtitle = element_text(
+      size = 16,
+      family = "Times New Roman",
+      face = "italic",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.x = element_text(
+      size = 14,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.y = element_text(
+      size = 14,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12)
+  ) +
+  transition_states(year, transition_length = 1, state_length = 1) +
+  ease_aes('cubic-in-out') +
+  enter_fade() +
+  exit_shrink()
+
+animate(
+  animated_plot_pop,
+  renderer = gifski_renderer("population_animation.gif"),
+  device = "png",
+  nframes = 80,
+  fps = 20,
+  width = 6,
+  height = 4.5,
+  units = "in",
+  res = 150
+)
+```
+
+Next, we will clean and filter the data for multiple countries. These countries were selected based on their high GDP values. I will be using the same cleaning process as before, but I will also filter the data to only include the years 1950-2021 (the entire dataset). I have only printed from 2016-2021 for better readability.
+
+## Population in the Countries with High GDP
+
+```{r high_GDP_multiple_countries_population, echo = FALSE}
+populationGDP <- 
+  clean_population |>
+  rename(country = country_name) |>
+  filter(country %in% c("United States", "China", "Japan", "Germany")
+                        & year >= 1950 & year <= 2021) |>
+  select(country, year, population) |>
+  arrange(country, year)
+
+populationGDP |>
+  filter(year >= 2016) |>
+  kable(
+    caption = "Population Data of the Multiple Countries (1950-2021)",
+    align = "c"  
+  )
+```
+
+In the following plot, I will be using the **facet_wrap** function to create a separate plot for each country. I will also use the **scale_y_continuous** function to format the y-axis labels with commas for better readability. The **theme_minimal** function is used to give the plot a clean and modern look.
+
+```{r plot_population_data_multiple_countries, echo = FALSE}
+populationGDP |>
+  ggplot(aes(x = year, y = population)) +
+  geom_line() +
+  labs(
+    title = "Population in Selected Countries (1950-2021)",
+    x = "Year",
+    y = "Population"
+  ) +
+  scale_y_continuous(labels = comma) +   
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 15,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.x = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.y = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(size = 5),
+    axis.text.y = element_text(size = 5)
+  ) +
+  facet_wrap(~ country, scales = "free_y") #the free_y option allows each country to have its own y-axis scale
+```
+
+Now, we calculate the percentage change across each year because each country has varying population ranges. We need the base_1950 value to calculate the percentage change.
+
+```{r percentage_change_pop, echo = FALSE}
+populationGDP_perc <- populationGDP |>
+  group_by(country) |>
+  mutate(
+    base_1950 = population[year == 1950],
+    perc_change = (population / base_1950 - 1) * 100
+  )
+
+populationGDP_perc |>
+  filter(year >= 2016) |>
+  kable(
+    caption = "Population Data in Multiple Countries (1950-2021) with Percentage Change",
+    align = "c"  
+  )
+```
+
+In the following plot, I will be using the **facet_wrap** function to create a separate plot for each country. I will also use the **scale_y_continuous** function to format the y-axis labels with commas for better readability. The **theme_minimal** function is used to give the plot a clean and modern look.
+
+```{r plot_population_data_percentage_change, echo = FALSE}
+populationGDP_perc |>
+  ggplot(aes(x = year, y = perc_change)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_line(color = "darkblue") +
+  labs(
+    title = "Percentage Change in Population (1950-2021)",
+    subtitle = "Relative to 1950 baseline",
+    x = "Year",
+    y = "Percentage Change (%)"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 13,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    plot.subtitle = element_text(
+      size = 12,
+      family = "Times New Roman",
+      face = "italic",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.x = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.y = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(size = 5),
+    axis.text.y = element_text(size = 5)
+  ) +
+  facet_wrap(~ country, scales = "free_y")
+```
+
+# Joining Education and Population Datasets
+
+The education and population datasets have the same country names but with different years. The range for the years in the population data set (1950-2021) is much larger than the education dataset (1970-2014). I will be using the **left_join** function from the **dplyr** package to merge the two datasets based on the common columns (country and year).
+
+## A focus on the United States for both Education and Population
+
+I will initially join the two clean datasets together to find the total number of teachers in a country during a certain time period. I will be using the **left_join** function from the **dplyr** package to merge the two datasets based on the common columns (country and year).
+
+```{r load_joined_data, echo = TRUE}
+joined_data <- clean_population |>
+  left_join(
+    clean_education, by = c("country_name" = "entity", "year")
+  )
+
+kable(
+  joined_data |>
+    filter(country_name == "United States") |>
+    slice_sample(n = 10),
+  caption = "Joined Education and Population Data",
+  align = "c"
+)
+```
+
+I created a data frame that includes only the United States from the years 2000-2014 which will ensure that I do not have any null values. I want to create four new columns to hold the percentage of teachers in pre-primary, primary, secondary, and tertiary education with relation to the population during that year. I will also create a new column to hold the total number of teachers across all four categories.
+
+```{r US_joined_data, echo = FALSE}
+joined_data_US <- joined_data |>
+  rename(country = country_name) |>
+  filter(country == "United States" & year >= 2000 & year <= 2014) |>
+  mutate(
+    pre_primary_perc = (pre_primary / population) * 100,
+    primary_perc = (primary / population) * 100,
+    lower_secondary_perc = (lower_secondary / population) * 100,
+    upper_secondary_perc = (upper_secondary / population) * 100,
+    tertiary_perc = (tertiary / population) * 100,
+    total_teachers = pre_primary + primary + lower_secondary + upper_secondary + tertiary
+  ) |>
+  select(country, year, population, pre_primary_perc, primary_perc, 
+         lower_secondary_perc, upper_secondary_perc, tertiary_perc, total_teachers)
+
+kable(
+  joined_data_US,
+  caption = "Joined Education and Population Data (US)",
+  align = "c"
+)
+```
+
+I will now create a plot using the **ggplot2** package to show the percentage of teachers in pre-primary, primary, secondary, and tertiary education with relation to the population during that year. I will also use the **scale_y_continuous** function to format the y-axis labels with commas for better readability. The **theme_minimal** function is used to give the plot a clean and modern look.
+
+```{r plot_joined_data_US, echo = FALSE}
+joined_data_US |>
+  ggplot(aes(x = year)) +
+  geom_line(aes(y = pre_primary_perc, color = "Pre-Primary"), linewidth = 0.5) +
+  geom_line(aes(y = primary_perc, color = "Primary"), linewidth = 0.5) +
+  geom_line(aes(y = lower_secondary_perc, color = "Lower Secondary"), linewidth = 0.5) +
+  geom_line(aes(y = upper_secondary_perc, color = "Upper Secondary"), linewidth = 0.5) +
+  geom_line(aes(y = tertiary_perc, color = "Tertiary"), linewidth = 0.5) +
+  labs(
+    title = "Percentage of Teachers in Different Education Levels (2000-2014)",
+    x = "Year",
+    y = "Percentage of Teachers (%)"
+  ) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 9,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.x = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.y = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    legend.text = element_text(
+      size = 8,
+      family = "Times New Roman",
+      face = "italic",
+      color = "cornflowerblue"
+    ),
+    legend.title = element_blank(),  
+    axis.text.x = element_text(size = 5),
+    axis.text.y = element_text(size = 5)
+  )
+```
+
+## Shifting focus to four countries with high GDP levels
+
+We have cleaned both datasets and created plots for each dataset. Now, we can join the two datasets together to find the total number of teachers in a country during a certain time period. I will be using the **left_join** function from the **dplyr** package to merge the two datasets based on the common columns (country and year). 
+
+```{r join_datasets_GDP, echo = TRUE}
+joined_data <- populationGDP |>
+  left_join(
+    educationGDP, by = c("country", "year")
+  )
+
+joined_data |> 
+  filter(country == "United States") |>
+  slice_sample(n = 10) |> 
+  kable(
+    caption = "Joined Education and Population Data",
+    align = "c"
+  )
+```
+
+Now we can create a total education column, remove the country code column, and filter so that we focus primarily on four countries: United States, China, Japan, and Germany in primary education. Then I created a new column to represent the ratio of the overall population to teachers in primary education. 
+
+```{r filter_joined_data_GDP, echo = FALSE}
+joined_data_filtered <- joined_data |>
+  select(country, year, population, primary) |>
+  filter(country %in% c("United States", "China", "Japan", "Germany") &
+         year >= 2006 & year <= 2014) |>
+  mutate(ratio =  population / primary) 
+
+kable(
+  joined_data_filtered,
+  caption = "Joined Education and Population Data (Filtered)",
+  align = "c"
+)
+```
+
+I will now plot the above filtered data using the **facet_wrap** function to create a separate plot for each country. I will also use the **scale_y_continuous** function to format the y-axis labels with commas for better readability. The **theme_minimal** function is used to give the plot a clean and modern look. 
+
+```{r plot_joined_data_GDP, echo = FALSE}
+joined_data_filtered |>
+  ggplot(aes(x = year, y = ratio)) +
+  geom_line() +
+  geom_point(size = 1.5, color = "darkblue") +
+  labs(
+    title = "Ratio of Population to Primary Teachers in Selected Countries (2006-2014)",
+    x = "Year",
+    y = "Ratio of Population to Primary Teachers"
+  ) +
+  scale_y_continuous() +  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.x = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.title.y = element_text(
+      size = 10,
+      family = "Times New Roman",
+      face = "bold",
+      color = "cornflowerblue",
+      hjust = 0.5
+    ),
+    axis.text.x = element_text(size = 5),
+    axis.text.y = element_text(size = 5)
+  ) +
+  facet_wrap(~ country, scales = "free_y") #the free_y option allows each country to have its own y-axis scale
+```
+
+# Conclusion
+
+I worked with both of these datasets individually before analyzing trends that they had when joined with each other. I was able to create animated plots for both datasets and then filter the data to show the percentage change in teachers and population over time. I also created a plot that shows the ratio of primary teachers to population in selected countries. The education dataset had a much smaller range of years compared to the population dataset and had more NA values. For aesthetic purposes, I used the **kable** function from the **knitr** package and the **theme_minimal** function from the **ggplot2** package to create a clean and modern look for the plots. 
+
+# Appendix
+
+The following links were used to help with the analysis and visualization of the datasets:
+
+Education Dataset: <https://ourworldindata.org/global-education>
+
+Population Dataset: <https://ourworldindata.org/explorers/population-and-demography>
+
+Help with Regular Expressions: <https://regex101.com/>
+
+Use of AI:
+
+The Github Copilot autofill feature that was shown in the lecture videos was used throughout this project to help with the analysis and visualization of the datasets.
+
+Education Dataset
+I asked Deepseek (DeepThink function) to take the column names I provided and use the clean_names function to incorporate the new names into the dataframe. I also needed help combining the lower and upper secondary into one column. An issue I came across for using multiple countries in facet_wrap was the scale of the y-axis for each country which gave me scales = free_y as an optional argument that I used for facet_wrap.
+
+Population Dataset
+I had column names that went "'numeric' to 'numeric'" and I wanted to make it say "age1 to age2 years". I used the same Regex formula as before but I needed help with the replacement part. 
